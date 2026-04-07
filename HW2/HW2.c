@@ -41,6 +41,6 @@ int main()
     adc_select_input(0); // sample from ADC0
 
     while (true) {
-        tight_loop_conents(); // do nothing here, the interrupt does the work
+        tight_loop_contents(); // do nothing here, the interrupt does the work
     }
 }

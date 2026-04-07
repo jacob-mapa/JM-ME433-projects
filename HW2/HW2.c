@@ -13,6 +13,17 @@ bool timer_interrupt_function(__unused struct repeating_timer *t) {
     return true;
 }
 
+void set_servo_angle(uint pin, uint16_t wrap, float angle) {
+    // angle must be between 0 and 180
+    if (angle < 0) angle = 0;
+    if (angle > 180) angle = 180;
+    
+    float pulse_ms = 1.0f + (angle/180.0f); // pulse width in ms, between 1 and 2ms
+    uint16_t level = (uint16_t)((pulse_ms/20.0f)*wrap); // set the duty cycle, 20ms is the period for a 50Hz signal
+
+    pwm_set_gpio_level(pin, level);
+}
+
 int main()
 {
     stdio_init_all();

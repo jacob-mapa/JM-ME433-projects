@@ -3,6 +3,8 @@
 #include "hardware/pwm.h" // CMakeLists.txt must have hardware_pwm in target_link_libraries
 #include "hardware/adc.h" // CMakeLists.txt must have hardware_adc in target_link_libraries
 
+void set_servo_angle(uint pin, uint16_t wrap, float angle);
+
 #define PWMPIN 16
 
 bool timer_interrupt_function(__unused struct repeating_timer *t) {

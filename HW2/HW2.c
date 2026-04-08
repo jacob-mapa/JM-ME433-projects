@@ -3,7 +3,7 @@
 #include "hardware/pwm.h" // CMakeLists.txt must have hardware_pwm in target_link_libraries
 #include "hardware/adc.h" // CMakeLists.txt must have hardware_adc in target_link_libraries
 
-void set_servo_angle(uint pin, uint16_t wrap, float angle);
+void set_servo_angle(int angle);
 
 #define PWMPIN 16
 
@@ -13,17 +13,6 @@ bool timer_interrupt_function(__unused struct repeating_timer *t) {
     // print the voltage
     printf("%f\r\n",(float)result1/4095*3.3);
     return true;
-}
-
-void set_servo_angle(uint pin, uint16_t wrap, float angle) {
-    // angle must be between 0 and 180
-    if (angle < 0) angle = 0;
-    if (angle > 180) angle = 180;
-    
-    float pulse_ms = 1.0f + (angle/180.0f); // pulse width in ms, between 1 and 2ms
-    uint16_t level = (uint16_t)((pulse_ms/20.0f)*wrap); // set the duty cycle, 20ms is the period for a 50Hz signal
-
-    pwm_set_gpio_level(pin, level);
 }
 
 int main()
@@ -40,13 +29,13 @@ int main()
     gpio_set_function(PWMPIN, GPIO_FUNC_PWM); // Set the Pin to be PWM
     uint slice_num = pwm_gpio_to_slice_num(PWMPIN); // Get PWM slice number
     // the clock frequency is 150MHz divided by a float from 1 to 255
-    float div = 10; // must be between 1-255
+    float div = 50; // must be between 1-255
     pwm_set_clkdiv(slice_num, div); // sets the clock speed
-    uint16_t wrap = 1500; // when to rollover, must be less than 65535
+    uint16_t wrap = 60000; // when to rollover, must be less than 65535
     pwm_set_wrap(slice_num, wrap); 
     pwm_set_enabled(slice_num, true); // turn on the PWM
 
-    pwm_set_gpio_level(PWMPIN, 1500/2); // set the duty cycle to 50%
+    pwm_set_gpio_level(PWMPIN, 0); // set the duty cycle to 50%
 
     // turn on the adc
     adc_init();
@@ -54,6 +43,18 @@ int main()
     adc_select_input(0); // sample from ADC0
 
     while (true) {
-        tight_loop_contents(); // do nothing here, the interrupt does the work
+        int i = 0;
+        for (i=10; i<170; i++) {
+            set_servo_angle(i);
+            sleep_ms(10);
+        }
+        for (i=170; i>10; i--) {
+            set_servo_angle(i);
+            sleep_ms(10);
+        }
     }
+}
+
+void set_servo_angle(int angle) {
+    pwm_set_gpio_level(PWMPIN, (int)((0.05+(angle/180.0)*0.05)*60000));
 }

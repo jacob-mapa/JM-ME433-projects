@@ -9,7 +9,7 @@
 //#define I2C_SDA 4
 //#define I2C_SCL 5
 
-#define HEARTBEAT_LED PICO_DEFAULT_LED_PIN
+#define HEARTBEAT_LED 16
 
 int main()
 {

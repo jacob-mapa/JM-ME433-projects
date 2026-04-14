@@ -5,6 +5,7 @@
 #define MCP23008_ADDR 0x20
 
 #define IODIR 0x00
+#define GPIO 0x09
 #define OLAT 0x0A
 
 // I2C defines
@@ -21,6 +22,13 @@ void mcp_write(unsigned char ADDR, unsigned char reg, unsigned char value) {
     buf[0] = reg;
     buf[1] = value;
     i2c_write_blocking(I2C_PORT, ADDR, buf, 2, false);
+}
+
+unsigned char mcp_read(unsigned char ADDR, unsigned char reg) {
+    unsigned char value;
+    i2c_write_blocking(I2C_PORT, ADDR, &reg, 1, true);
+    i2c_read_blocking(I2C_PORT, ADDR, &value, 1, false);
+    return value;
 }
 
 int main()
@@ -46,15 +54,24 @@ int main()
 
     mcp_write(MCP23008_ADDR, OLAT, 0x00);
 
+    unsigned char heartbeat_state = 0;
+    unsigned char expander_output = 0x00;
+
     while (1) {
-        gpio_put(HEARTBEAT_LED, 1);
+        heartbeat_state = !heartbeat_state;
+        gpio_put(HEARTBEAT_LED, heartbeat_state);
 
-        mcp_write(MCP23008_ADDR, OLAT, (1 << 7));
-        sleep_ms(200);
+        unsigned char gpio_val = mcp_read(MCP23008_ADDR, GPIO);
 
-        gpio_put(HEARTBEAT_LED, 0);
+        unsigned char gp0_state = gpio_val & 0x01;
 
-        mcp_write(MCP23008_ADDR, OLAT, 0x00);
+        if (gp0_state == 0) {
+            expander_output = (1 << 7);
+        } else {
+            expander_output &= ~(1 << 7);       
+        }
+
+        mcp_write(MCP23008_ADDR, OLAT, expander_output);
         sleep_ms(200);
     }
 }

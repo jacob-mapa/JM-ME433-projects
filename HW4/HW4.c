@@ -16,7 +16,12 @@ int main()
 {
     stdio_init_all();
 
-    gpio_init(I2C_PORT, 1700*1000);
+    // Initialize the heartbeat LED
+    gpio_init(HEARTBEAT_LED);
+    gpio_set_dir(HEARTBEAT_LED, GPIO_OUT);
+    
+    // Initialize the I2C interface
+    i2c_init(I2C_PORT, 1700*1000);
 
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
@@ -28,9 +33,11 @@ int main()
     ssd1306_update();
 
     while (true) {
+        gpio_put(HEARTBEAT_LED, 1);
         ssd1306_drawPixel(10, 20, 1);
         ssd1306_update();
         sleep_ms(1000);
+        gpio_put(HEARTBEAT_LED, 0);
         ssd1306_drawPixel(10, 20, 0);
         ssd1306_update();
         sleep_ms(1000);

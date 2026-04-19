@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/adc.h"
 #include "ssd1306.h"
 #include "font.h"
 
@@ -28,34 +29,44 @@ int main()
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
 
+    adc_init();
+    adc_gpio_init(26);
+    adc_select_input(0); 
+
     ssd1306_setup();
     ssd1306_clear();
     ssd1306_update();
 
     while (true) {
-        //gpio_put(HEARTBEAT_LED, 1);
-        //ssd1306_drawPixel(10, 20, 1);
-        //ssd1306_update();
-        //sleep_ms(500);
-        //gpio_put(HEARTBEAT_LED, 0);
-        //ssd1306_drawPixel(10, 20, 0);
-        //ssd1306_update();
-        //sleep_ms(500);
+        /*
+        gpio_put(HEARTBEAT_LED, 1);
+        ssd1306_drawPixel(10, 20, 1);
+        ssd1306_update();
+        sleep_ms(500);
+        gpio_put(HEARTBEAT_LED, 0);
+        ssd1306_drawPixel(10, 20, 0);
+        ssd1306_update();
+        sleep_ms(500);
+        */
 
         gpio_put(HEARTBEAT_LED, 1);
        
         absolute_time_t t1, t2;
         t1 = get_absolute_time();
+
+        //read ADC and convert to voltage
+        uint16_t adc_raw = adc_read(); // Replace with actual ADC reading
+        float voltage = adc_raw * 3.3f / 4095.0f; // Convert to voltage
+
         ssd1306_clear();
         char message[30];
-        sprintf(message, "Hello World %d", (int)to_ms_since_boot(t1));
+        sprintf(message, "ADC0 raw=%4u", adc_raw);
         drawMessage(0, 0, message);
-        sprintf(message, "Row 2 %d", (int)to_ms_since_boot(t1));
+        sprintf(message, "ADC0 volts=%1.3f", voltage);
         drawMessage(0, 8, message);
-        sprintf(message, "Row 3 %d", (int)to_ms_since_boot(t1));
+        sprintf(message, "t=%u us", (int)to_us_since_boot(t1));
         drawMessage(0, 16, message);
-        sprintf(message, "Row 4 %d", (int)to_ms_since_boot(t1));
-        drawMessage(0, 24, message);
+    
         ssd1306_update();
         t2 = get_absolute_time();
         uint64_t ta;

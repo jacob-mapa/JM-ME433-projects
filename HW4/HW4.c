@@ -9,8 +9,8 @@
 #define I2C_SCL 5
 #define HEARTBEAT_LED PICO_DEFAULT_LED_PIN
 
-//void drawChar(uint16_t x, uint16_t y, char letter);
-//void drawMessage(uint16_t x, uint16_t y, char*m);
+void drawChar(uint16_t x, uint16_t y, char letter);
+void drawMessage(uint16_t x, uint16_t y, char*m);
 
 int main()
 {
@@ -33,13 +33,61 @@ int main()
     ssd1306_update();
 
     while (true) {
+        //gpio_put(HEARTBEAT_LED, 1);
+        //ssd1306_drawPixel(10, 20, 1);
+        //ssd1306_update();
+        //sleep_ms(500);
+        //gpio_put(HEARTBEAT_LED, 0);
+        //ssd1306_drawPixel(10, 20, 0);
+        //ssd1306_update();
+        //sleep_ms(500);
+
         gpio_put(HEARTBEAT_LED, 1);
-        ssd1306_drawPixel(10, 20, 1);
+       
+        absolute_time_t t1, t2;
+        t1 = get_absolute_time();
+        ssd1306_clear();
+        char message[30];
+        sprintf(message, "Hello World %d", (int)to_ms_since_boot(t1));
+        drawMessage(0, 0, message);
+        sprintf(message, "Row 2 %d", (int)to_ms_since_boot(t1));
+        drawMessage(0, 8, message);
+        sprintf(message, "Row 3 %d", (int)to_ms_since_boot(t1));
+        drawMessage(0, 16, message);
+        sprintf(message, "Row 4 %d", (int)to_ms_since_boot(t1));
+        drawMessage(0, 24, message);
         ssd1306_update();
-        sleep_ms(1000);
+        t2 = get_absolute_time();
+        uint64_t ta;
+        ta = to_us_since_boot(t2) - to_us_since_boot(t1);
+        char speed[30];
+        sprintf(speed,"FPS = %6.3f  ",1.0/(ta/1000000.0));
+        drawMessage(0, 24, speed);
+        ssd1306_update();
         gpio_put(HEARTBEAT_LED, 0);
-        ssd1306_drawPixel(10, 20, 0);
-        ssd1306_update();
         sleep_ms(1000);
+    }
+}
+
+void drawMessage(uint16_t x, uint16_t y, char*m) {
+    int i = 0;
+    while (m[i] != '\0') {
+        drawChar(x + 6 * i, y, m[i]);
+        i++;
+    }
+}
+
+void drawChar(uint16_t x, uint16_t y, char letter) {
+    // Clamp unsupported characters to space
+    if (letter < 0x20 || letter > 0x7F) {
+        letter = ' ';
+    }
+
+    for (int i=0; i<5; i++) {
+        char colm = ASCII[letter - 0x20][i];
+        for (int j=0; j<8; j++) {
+            int bit = (colm >> j) & 0x1;
+            ssd1306_drawPixel(x+i, y+j, bit);
+        }
     }
 }

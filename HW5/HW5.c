@@ -77,17 +77,113 @@ int main()
     stdio_init_all();
     sleep_ms(2000);
 
-    // I2C Initialisation. Using it at 400Khz.
-    i2c_init(I2C_PORT, 400*1000);
-    
+    init_i2c();
+
+    ssd1306_setup();
+
+    mpu6050_check_whoami();
+    mpu6050_init();
+
+    imu_data_t imu;
+
+    while (1) {
+        mpu6050_read_all(&imu);
+        printf("AX=%6d AY=%6d AZ=%6d | GX=%6d GY=%6d GZ=%6d | T=%6d || "
+               "AX=% .3f g AY=% .3f g AZ=% .3f g | "
+               "GX=% .2f dps GY=% .2f dps GZ=%.2f dps | "
+               "Temp=%.2f C\n",
+               imu.ax_raw, imu.ay_raw, imu.az_raw, 
+               imu.gx_raw, imu.gy_raw, imu.gz_raw, 
+               imu.temp_raw,
+               imu.ax_g, imu.ay_g, imu.az_g, 
+               imu.gx_dps, imu.gy_dps, imu.gz_dps, 
+               imu.temp_c);
+
+        draw_tilt_vector(&imu);
+
+        sleep_ms(10);
+    }
+
+    return 0;
+}
+
+static void init_i2c(void) {
+    i2c_init(I2C_PORT, 400000); // 400 KHz
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
-    // For more examples of I2C use see https://github.com/raspberrypi/pico-examples/tree/master/i2c
+}
 
-    while (true) {
-        printf("Hello, world!\n");
-        sleep_ms(1000);
+static void mpu_write_reg(uint8_t reg, uint8_t value) {
+    uint8_t buf[2] = {reg, value};
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, buf, 2, false);
+}
+
+static uint8_t mpu_read_reg(uint8_t reg) {
+    uint8_t value;
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &reg, 1, true);
+    i2c_read_blocking(I2C_PORT, MPU6050_ADDR, &value, 1, false);
+    return value;
+}
+
+static void mpu_read_burst(uint8_t start_reg, uint8_t *buf, size_t len) {
+    i2c_write_blocking(I2C_PORT, MPU6050_ADDR, &start_reg, 1, true);
+    i2c_read_blocking(I2C_PORT, MPU6050_ADDR, buf, len, false);
+}
+
+static int16_t combine_bytes(uint8_t high, uint8_t low) {
+    return (int16_t)((high << 8) | low);
+}
+
+static void mpu6050_check_whoami(void) {
+    uint8_t who = mpu_read_reg(WHO_AM_I);
+    printf("WHO_AM_I = 0x%02X\n", who);
+
+    if (!(who == 0x68 || who == 0x98)) {
+        printf("MPU6050 WHO_AM_I mismatch: expected 0x%02X, got 0x%02X\n", MPU6050_ADDR, who);
+        while (1) { 
+            sleep_ms(250); 
+        }
     }
 }
+
+static void mpu6050_init(void) {
+    mpu_write_reg(PWR_MGMT_1, 0x00); // Wake up sensor
+    sleep_ms(100);
+    mpu_write_reg(CONFIG, 0x00); // DLPF_CFG = 3 (44Hz accel, 42Hz gyro)
+    mpu_write_reg(GYRO_CONFIG, 0x18); // ±250 dps
+    mpu_write_reg(ACCEL_CONFIG, 0x00); // ±2 g
+}
+
+static void mpu6050_read_all(imu_data_t *imu) {
+    uint8_t buf[14];
+    mpu_read_burst(ACCEL_XOUT_H, buf, 14);
+
+    imu->ax_raw = combine_bytes(buf[0], buf[1]);
+    imu->ay_raw = combine_bytes(buf[2], buf[3]);
+    imu->az_raw = combine_bytes(buf[4], buf[5]);
+    imu->temp_raw = combine_bytes(buf[6], buf[7]);
+    imu->gx_raw = combine_bytes(buf[8], buf[9]);
+    imu->gy_raw = combine_bytes(buf[10], buf[11]);
+    imu->gz_raw = combine_bytes(buf[12], buf[13]);
+
+    imu->ax_g = imu->ax_raw * 0.000061f;
+    imu->ay_g = imu->ay_raw * 0.000061f;
+    imu->az_g = imu->az_raw * 0.000061f;
+
+    imu->gx_dps = imu->gx_raw * 0.007630f;
+    imu->gy_dps = imu->gy_raw * 0.007630f;
+    imu->gz_dps = imu->gz_raw * 0.007630f;
+
+    imu->temp_c = (imu->temp_raw / 340.0f) + 36.53f;
+}
+
+static void draw_pixel_safe(int x, int y, unsigned char color) {
+    if (x < 0 || x >= OLED_WIDTH || y < 0 || y >= OLED_HEIGHT) {
+        return;
+    }
+    ssd1306_draw_pixel((unsigned char)x, (unsigned char)y, color);
+}
+
+

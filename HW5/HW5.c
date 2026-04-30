@@ -58,7 +58,7 @@ typedef struct{
     float gz_dps;
 } imu_data_t;
 
-static void init_i2c(void):
+static void init_i2c(void);
 static void mpu_write_reg(uint8_t reg, uint8_t value);
 static uint8_t mpu_read_reg(uint8_t reg);
 static void mpu_read_burst(uint8_t start_reg, uint8_t *buf, size_t len);
@@ -108,7 +108,7 @@ int main()
 }
 
 static void init_i2c(void) {
-    i2c_init(I2C_PORT, 400000); // 400 KHz
+    i2c_init(I2C_PORT, 100000); // 100 KHz
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA);
@@ -183,7 +183,52 @@ static void draw_pixel_safe(int x, int y, unsigned char color) {
     if (x < 0 || x >= OLED_WIDTH || y < 0 || y >= OLED_HEIGHT) {
         return;
     }
-    ssd1306_draw_pixel((unsigned char)x, (unsigned char)y, color);
+    ssd1306_drawPixel((unsigned char)x, (unsigned char)y, color);
+}
+
+static void draw_line(int x0, int y0, int x1, int y1, unsigned char color) {
+    int dx = abs(x1 - x0);
+    int sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0);
+    int sy = y0 < y1 ? 1 : -1; 
+    int err = dx + dy;
+
+    while (1) {
+        draw_pixel_safe(x0, y0, color);
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        int e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy; 
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx; 
+            y0 += sy;
+        }
+    }
+}
+
+static void draw_crosshair(int cx, int cy) {
+    draw_line(cx - 3, cy, cx + 3, cy, 1);
+    draw_line(cx, cy - 3, cx, cy + 3, 1);
+}
+
+static void draw_tilt_vector(const imu_data_t *imu) {
+    int cx = OLED_WIDTH / 2;
+    int cy = OLED_HEIGHT / 2;
+
+    // Scale the tilt vector for better visibility
+    const float scale = 12.0f;
+    int x1 = cx + (int)(imu->ax_g * scale);
+    int y1 = cy - (int)(imu->ay_g * scale);
+
+
+    ssd1306_clear();
+    draw_crosshair(cx, cy);
+    draw_line(cx, cy, x1, y1, 1);
+    ssd1306_update();
 }
 
 

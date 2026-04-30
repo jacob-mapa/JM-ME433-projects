@@ -220,7 +220,7 @@ static void draw_tilt_vector(const imu_data_t *imu) {
     int cy = OLED_HEIGHT / 2;
 
     // Scale the tilt vector for better visibility
-    const float scale = 12.0f;
+    const float scale = 20.0f;
     int x1 = cx + (int)(imu->ax_g * scale);
     int y1 = cy - (int)(imu->ay_g * scale);
 

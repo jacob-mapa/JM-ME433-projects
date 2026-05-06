@@ -28,6 +28,8 @@
 #include <string.h>
 
 #include "bsp/board_api.h"
+#include "hardware/gpio.h"
+#include "hardware/i2c.h"
 #include "tusb.h"
 
 #include "usb_descriptors.h"

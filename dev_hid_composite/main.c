@@ -34,6 +34,9 @@
 
 #include "usb_descriptors.h"
 
+#define MODE_BUTTON_PIN 15
+#define LED_PIN 19
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
@@ -54,10 +57,13 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 void led_blinking_task(void);
 void hid_task(void);
 
+static void initGPIO(void);
+
 /*------------- MAIN -------------*/
 int main(void)
 {
   board_init();
+  initGPIO();
 
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
@@ -73,6 +79,49 @@ int main(void)
 
     hid_task();
   }
+}
+
+static void initGPIO(void)
+{
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
+  gpio_put(LED_PIN, 0);
+
+  gpio_init(MODE_BUTTON_PIN);
+  gpio_set_dir(MODE_BUTTON_PIN, GPIO_IN);
+  gpio_pull_up(MODE_BUTTON_PIN);
+}
+
+// Button debounce
+static bool button_pressed_event(void){
+  static bool previous_raw_state = true;
+  static bool stable_state = true;
+  static bool press_already_counted = false;
+  static uint32_t last_change_time = 0;
+
+  bool current_raw_state = gpio_get(MODE_BUTTON_PIN);
+  uint32_t current_ms = board_millis();
+
+  if (current_raw_state != previous_raw_state) {
+    previous_raw_state = current_raw_state;
+    last_change_time = current_ms;
+  }
+
+  if ((current_ms - last_change_time_ms) > 25){
+    stable_state = current_raw_state;
+  }
+
+  //new press detected
+  if ((stable_state == false) && (press_already_counted == false)){
+    press_already_counted = true;
+    return true;
+  }
+
+  //button released, reset press count
+  if (stable_state == true){
+    press_already_counted = false;
+  }
+  return false;
 }
 
 //--------------------------------------------------------------------+
@@ -140,8 +189,8 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
 
     case REPORT_ID_MOUSE:
     {
-      int8_t const deltax = 5;
-      int8_t const deltay = 5;
+      int8_t deltax = 5;
+      int8_t deltay = 5;
 
       static int time = 0;
       static int dir = 0;
@@ -151,12 +200,29 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
         deltay = 0;
       }
 
+      if (dir == 1){
+        deltax = 0;
+        deltay = 5;
+      }
+
+      if (dir == 2){
+        deltax = -5;
+        deltay = 0;
+      }
+
+      if (dir == 3){
+        deltax = 0;
+        deltay = -5;
+      }
+
       time++;
       if (time == 50){
         dir = dir+1;
         time = 0;
       }
-
+      if (dir == 4){
+        dir = 0;
+      }
 
       // no button, right + down, no scroll, no pan
       tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, deltax, deltay, 0, 0);
@@ -237,8 +303,9 @@ void hid_task(void)
     tud_remote_wakeup();
   }else
   {
+    gpio_put(LED_PIN, remote_working_mode ? 1 : 0);
     // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_KEYBOARD, btn);
+    send_hid_report(REPORT_ID_MOUSE, btn);
   }
 }
 

@@ -54,6 +54,8 @@ enum  {
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
+static bool remote_working_mode = false;
+
 void led_blinking_task(void);
 void hid_task(void);
 
@@ -107,7 +109,7 @@ static bool button_pressed_event(void){
     last_change_time = current_ms;
   }
 
-  if ((current_ms - last_change_time_ms) > 25){
+  if ((current_ms - last_change_time) > 25){
     stable_state = current_raw_state;
   }
 
@@ -154,7 +156,6 @@ void tud_resume_cb(void)
 {
   blink_interval_ms = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
 }
-
 //--------------------------------------------------------------------+
 // USB HID
 //--------------------------------------------------------------------+
@@ -293,19 +294,17 @@ void hid_task(void)
   if ( board_millis() - start_ms < interval_ms) return; // not enough time
   start_ms += interval_ms;
 
-  uint32_t const btn = board_button_read();
-
-  // Remote wakeup
-  if ( tud_suspended() && btn )
+  if (button_pressed_event())
   {
     // Wake up host if we are in suspend mode
     // and REMOTE_WAKEUP feature is enabled by host
-    tud_remote_wakeup();
-  }else
+    remote_working_mode = !remote_working_mode;
+  }
+  gpio_put(LED_PIN, remote_working_mode ? 1 : 0);
+  
+  if (tud_hid_ready())
   {
-    gpio_put(LED_PIN, remote_working_mode ? 1 : 0);
-    // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-    send_hid_report(REPORT_ID_MOUSE, btn);
+    send_hid_report(REPORT_ID_MOUSE, 0);
   }
 }
 

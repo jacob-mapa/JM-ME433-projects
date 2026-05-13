@@ -43,6 +43,12 @@
 
 #define MPU_ADDR 0x68
 
+#define MPU_REG_SMPLRT_DIV 0x19
+#define MPU_REG_CONFIG 0x1A
+#define MPU_REG_ACCEL_CONFIG 0x1C
+#define MPU_REG_PWR_MGMT_1 0x6B
+#define MPU_REG_ACCEL_XOUT_H 0x3B
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
@@ -66,12 +72,20 @@ void led_blinking_task(void);
 void hid_task(void);
 
 static void initGPIO(void);
+static void mpu_init(void);
+static void mpu_write_reg(uint8_t reg, uint8_t value);
+static void mpu_read_accel(int16_t* ax, int16_t* ay, int16_t* az);
+
+static bool button_pressed_event(void);
+//static int8_t accel_to_mouse_delta(int16_t accel_raw);
+//static void send_hid_report(uint8_t report_id, uint32_t btn);
 
 /*------------- MAIN -------------*/
 int main(void)
 {
   board_init();
   initGPIO();
+  mpu_init();
 
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
@@ -98,6 +112,67 @@ static void initGPIO(void)
   gpio_init(MODE_BUTTON_PIN);
   gpio_set_dir(MODE_BUTTON_PIN, GPIO_IN);
   gpio_pull_up(MODE_BUTTON_PIN);
+}
+
+static void mpu_init(void)
+{
+  i2c_init(MPU_I2C_PORT, 400 * 1000);
+  gpio_set_function(MPU_I2C_SDA_PIN, GPIO_FUNC_I2C);
+  gpio_set_function(MPU_I2C_SCL_PIN, GPIO_FUNC_I2C);
+  gpio_pull_up(MPU_I2C_SDA_PIN);
+  gpio_pull_up(MPU_I2C_SCL_PIN);
+
+  sleep_ms(100);
+
+  // wake up MPU
+  mpu_write_reg(MPU_REG_PWR_MGMT_1, 0x00);
+  sleep_ms(100);
+
+  mpu_write_reg(MPU_REG_CONFIG, 0x03); // DLPF_CFG = 3, bandwidth = 44Hz
+
+  mpu_write_reg(MPU_REG_SMPLRT_DIV, 0x09);
+
+  mpu_write_reg(MPU_REG_ACCEL_CONFIG, 0x00);
+}
+
+static void mpu_write_reg(uint8_t reg, uint8_t value)
+{
+  uint8_t data[2];
+
+  data[0] = reg;
+  data[1] = value;
+
+  i2c_write_blocking(MPU_I2C_PORT, MPU_ADDR, data, 2, false);
+}
+  
+static void mpu_read_accel(int16_t* ax, int16_t* ay, int16_t* az)
+{
+  uint8_t reg = MPU_REG_ACCEL_XOUT_H;
+  uint8_t data[6];
+
+  int result;
+
+  result = i2c_read_blocking(MPU_I2C_PORT, MPU_ADDR, &reg, 1, true);
+
+  if (result < 0) {
+    *ax = 0;
+    *ay = 0;
+    *az = 0;
+    return;
+  }
+
+  result = i2c_read_blocking(MPU_I2C_PORT, MPU_ADDR, data, 6, false);
+
+  if (result < 0) {
+    *ax = 0;
+    *ay = 0;
+    *az = 0;
+    return;
+  }
+
+  *ax = (int16_t)((data[0] << 8) | data[1]);
+  *ay = (int16_t)((data[2] << 8) | data[3]);
+  *az = (int16_t)((data[4] << 8) | data[5]);
 }
 
 // Button debounce
@@ -131,6 +206,8 @@ static bool button_pressed_event(void){
   }
   return false;
 }
+
+//**static int8_t accel_to_mouse_delta(int16_t accel_raw);**//
 
 //--------------------------------------------------------------------+
 // Device callbacks
@@ -313,6 +390,8 @@ void hid_task(void)
     send_hid_report(REPORT_ID_MOUSE, 0);
   }
 }
+
+//**static void send_hid_report(uint8_t report_id, uint32_t btn);**//
 
 // Invoked when sent REPORT successfully to host
 // Application can use this to send the next report

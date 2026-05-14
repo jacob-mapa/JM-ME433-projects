@@ -77,8 +77,8 @@ static void mpu_write_reg(uint8_t reg, uint8_t value);
 static void mpu_read_accel(int16_t* ax, int16_t* ay, int16_t* az);
 
 static bool button_pressed_event(void);
-//static int8_t accel_to_mouse_delta(int16_t accel_raw);
-//static void send_hid_report(uint8_t report_id, uint32_t btn);
+static int8_t accel_to_mouse_delta(int16_t accel_raw);
+static void send_hid_report(uint8_t report_id, uint32_t btn);
 
 /*------------- MAIN -------------*/
 int main(void)
@@ -207,6 +207,33 @@ static bool button_pressed_event(void){
   return false;
 }
 
+static int8_t accel_to_mouse_delta(int16_t accel_raw){
+  // simple linear mapping for demo purpose, you can use more complex mapping if needed
+  int32_t magnitude = accel_raw;
+
+  if (magnitude < 0)
+  {
+    magnitude = -magnitude;
+  }
+
+  int8_t speed;
+
+  if (magnitude > 11000) {
+    speed = 5;
+  } else if (magnitude > 7000) {
+    speed = 3;
+  } else if (magnitude > 3500) {
+    speed = 1;
+  } else {
+    speed = 0;
+  }
+
+  if (accel_raw < 0) {
+    speed = -speed;
+  }
+  return speed;
+}
+
 //**static int8_t accel_to_mouse_delta(int16_t accel_raw);**//
 
 //--------------------------------------------------------------------+
@@ -245,34 +272,16 @@ void tud_resume_cb(void)
 
 static void send_hid_report(uint8_t report_id, uint32_t btn)
 {
-  // skip if hid is not ready yet
+  
+  /* skip if hid is not ready yet
   if ( !tud_hid_ready() ) return;
 
   switch(report_id)
   {
-    case REPORT_ID_KEYBOARD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_keyboard_key = false;
-
-      if ( btn )
-      {
-        uint8_t keycode[6] = { 0 };
-        keycode[0] = HID_KEY_A;
-
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
-        has_keyboard_key = true;
-      }else
-      {
-        // send empty key report if previously has key pressed
-        if (has_keyboard_key) tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-        has_keyboard_key = false;
-      }
-    }
-    break;
 
     case REPORT_ID_MOUSE:
     {
+      
       int8_t deltax = 5;
       int8_t deltay = 5;
 
@@ -307,63 +316,65 @@ static void send_hid_report(uint8_t report_id, uint32_t btn)
       if (dir == 4){
         dir = 0;
       }
+      
+      int16_t ax;
+      int16_t ay;
+      int16_t az;
+
+      mpu_read_accel(&ax, &ay, &az);
+
+      dx = accel_to_mouse_delta(ax);
+      dy = accel_to_mouse_delta(ay);
 
       // no button, right + down, no scroll, no pan
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, deltax, deltay, 0, 0);
-    }
-    break;
-
-    case REPORT_ID_CONSUMER_CONTROL:
-    {
-      // use to avoid send multiple consecutive zero report
-      static bool has_consumer_key = false;
-
-      if ( btn )
-      {
-        // volume down
-        uint16_t volume_down = HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-        tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &volume_down, 2);
-        has_consumer_key = true;
-      }else
-      {
-        // send empty key report (release key) if previously has key pressed
-        uint16_t empty_key = 0;
-        if (has_consumer_key) tud_hid_report(REPORT_ID_CONSUMER_CONTROL, &empty_key, 2);
-        has_consumer_key = false;
-      }
-    }
-    break;
-
-    case REPORT_ID_GAMEPAD:
-    {
-      // use to avoid send multiple consecutive zero report for keyboard
-      static bool has_gamepad_key = false;
-
-      hid_gamepad_report_t report =
-      {
-        .x   = 0, .y = 0, .z = 0, .rz = 0, .rx = 0, .ry = 0,
-        .hat = 0, .buttons = 0
-      };
-
-      if ( btn )
-      {
-        report.hat = GAMEPAD_HAT_UP;
-        report.buttons = GAMEPAD_BUTTON_A;
-        tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-
-        has_gamepad_key = true;
-      }else
-      {
-        report.hat = GAMEPAD_HAT_CENTERED;
-        report.buttons = 0;
-        if (has_gamepad_key) tud_hid_report(REPORT_ID_GAMEPAD, &report, sizeof(report));
-        has_gamepad_key = false;
-      }
+      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, dx, dy, 0, 0);
     }
     break;
 
     default: break;
   }
+  */
+
+  (void) btn;
+
+  if (report_id != REPORT_ID_MOUSE)
+  {
+    return;
+  }
+
+  int8_t dx = 0;
+  int8_t dy = 0;
+
+  if (remote_working_mode)
+  {
+    static uint8_t circle_index = 0;
+    static uint8_t slow_counter = 0;
+
+    static const int8_t circle_dx[] = {5, 3, 0, -3, -5, -3, 0, 3};
+
+    static const int8_t circle_dy[] = {0, 3, 5, 3, 0, -3, -5, -3};
+
+    if (slow_counter++ > 5)
+    {
+      slow_counter = 0;
+      dx = circle_dx[circle_index];
+      dy = circle_dy[circle_index];
+      circle_index = (circle_index + 1) % 8;
+    }
+  }
+  else
+  {
+     int16_t ax;
+     int16_t ay;
+     int16_t az;
+     
+     mpu_read_accel(&ax, &ay, &az);
+
+     dx = accel_to_mouse_delta(ax);
+     dy = accel_to_mouse_delta(ay);
+  }
+
+  tud_hid_mouse_report(report_id, 0x00, dx, dy, 0, 0);
 }
 
 // Every 10ms, we will sent 1 report for each HID profile (keyboard, mouse etc ..)

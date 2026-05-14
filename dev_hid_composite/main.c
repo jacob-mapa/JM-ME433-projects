@@ -272,69 +272,6 @@ void tud_resume_cb(void)
 
 static void send_hid_report(uint8_t report_id, uint32_t btn)
 {
-  
-  /* skip if hid is not ready yet
-  if ( !tud_hid_ready() ) return;
-
-  switch(report_id)
-  {
-
-    case REPORT_ID_MOUSE:
-    {
-      
-      int8_t deltax = 5;
-      int8_t deltay = 5;
-
-      static int time = 0;
-      static int dir = 0;
-
-      if (dir == 0){
-        deltax = 5;
-        deltay = 0;
-      }
-
-      if (dir == 1){
-        deltax = 0;
-        deltay = 5;
-      }
-
-      if (dir == 2){
-        deltax = -5;
-        deltay = 0;
-      }
-
-      if (dir == 3){
-        deltax = 0;
-        deltay = -5;
-      }
-
-      time++;
-      if (time == 50){
-        dir = dir+1;
-        time = 0;
-      }
-      if (dir == 4){
-        dir = 0;
-      }
-      
-      int16_t ax;
-      int16_t ay;
-      int16_t az;
-
-      mpu_read_accel(&ax, &ay, &az);
-
-      dx = accel_to_mouse_delta(ax);
-      dy = accel_to_mouse_delta(ay);
-
-      // no button, right + down, no scroll, no pan
-      tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, dx, dy, 0, 0);
-    }
-    break;
-
-    default: break;
-  }
-  */
-
   (void) btn;
 
   if (report_id != REPORT_ID_MOUSE)

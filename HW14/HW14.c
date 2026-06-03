@@ -123,6 +123,6 @@ int main(void)
         for (int i = 0; i < n_samples; i++) {
             printf("%lu,%d,%.2f\n", time_data[i], raw_data[i], filtered_data[i]);
         }
-        printf("Data collection complete. Enter the number of samples to collect, then press Enter:\n");
+        printf("END\n");
     }
 }

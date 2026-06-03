@@ -56,13 +56,15 @@ int32_t hx711_read(void) {
 }
 
 int get_sample_count_from_usb(void) {
-    char buffer[32];
+    /*char buffer[32];
     int index = 0;
-    int ch;
+    int ch;*/
+    int n = 0;
+    sleep_ms(100); // Short delay to ensure USB is ready
 
     printf("Enter the number of samples to collect, then press Enter:\n");
 
-    while (true) {
+    /*while (true) {
         ch = getchar_timeout_us(0);
 
         if (ch != PICO_ERROR_TIMEOUT) {
@@ -77,8 +79,8 @@ int get_sample_count_from_usb(void) {
         }
     }
 
-    int n = 0;
-
+    int n = atoi(buffer); // Convert the input string to an integer
+    */
     scanf("%d", &n); // Read the number of samples from USB
 
     if (n < 1) {

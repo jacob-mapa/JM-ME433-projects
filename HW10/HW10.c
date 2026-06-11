@@ -18,4 +18,5 @@ int main()
         printf("BTN %d\n", pressed);
         sleep_ms(20); // Poll every 20 ms
     }
+    return 0;
 }

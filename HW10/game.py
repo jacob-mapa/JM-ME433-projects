@@ -1,6 +1,5 @@
-import pgzrun
 import random
-import time
+import pgzrun
 
 try:
     import serial
@@ -8,179 +7,227 @@ except ImportError:
     serial = None
 
 
+# -----------------------------
+# User settings
+# -----------------------------
+
 WIDTH = 600
 HEIGHT = 500
 
-# Change this if your Pico uses a different COM port
-PORT = "COM3"
-BAUD = 115200
+# Change this if your Pico appears on a different COM port.
+# Check VSCode Serial Monitor or Device Manager if needed.
+SERIAL_PORT = "COM3"
+BAUD_RATE = 115200
 
-# Game layout
-LANES = [150, 300, 450]
-PLAYER_Y = 430
+LANE_LEFT_X = WIDTH // 3
+LANE_RIGHT_X = 2 * WIDTH // 3
+
+PLAYER_Y = HEIGHT - 60
 PLAYER_SIZE = 40
 
-# Serial variables
+OBSTACLE_SIZE = 45
+OBSTACLE_SPEED_START = 3
+SPAWN_TIME_START = 70
+
+
+# -----------------------------
+# Serial setup
+# -----------------------------
+
 ser = None
-button_state = 0
+serial_connected = False
+serial_message = "Serial: not connected"
 
-# Debounce / repeat-control variable
-last_move_time = 0
-MOVE_DELAY = 0.25  # seconds between allowed button actions
+if serial is not None:
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0)
+        ser.reset_input_buffer()
+        serial_connected = True
+        serial_message = f"Serial: connected to {SERIAL_PORT}"
+    except Exception as e:
+        serial_connected = False
+        serial_message = f"Serial: not connected ({SERIAL_PORT})"
 
+
+# -----------------------------
 # Game variables
-player_lane = 1
-blocks = []
+# -----------------------------
+
+player_lane = 0
+player_x = LANE_LEFT_X
+
+obstacles = []
 score = 0
 game_over = False
+
 spawn_timer = 0
-fall_speed = 180
+spawn_time = SPAWN_TIME_START
+obstacle_speed = OBSTACLE_SPEED_START
 
-
-def connect_serial():
-    global ser
-
-    if serial is None:
-        print("pyserial is not installed. Run: pip install pyserial")
-        return
-
-    try:
-        ser = serial.Serial(PORT, BAUD, timeout=0.01)
-        time.sleep(2)
-        print(f"Connected to Pico on {PORT}")
-    except Exception as e:
-        ser = None
-        print(f"Could not connect to Pico on {PORT}: {e}")
-        print("The game will still run with SPACE as a backup control.")
-
-
-def read_pico_serial():
-    global button_state
-
-    if ser is None:
-        return
-
-    try:
-        line = ser.readline().decode(errors="ignore").strip()
-
-        if line:
-            print(line)  # debug: should print BTN,0 or BTN,1 in terminal
-
-            parts = line.split(",")
-
-            if len(parts) == 2 and parts[0] == "BTN":
-                button_state = int(parts[1])
-
-    except Exception as e:
-        print(f"Serial read error: {e}")
+button_down = False
+last_button_down = False
 
 
 def reset_game():
-    global player_lane, blocks, score, game_over, spawn_timer, fall_speed
+    global player_lane, player_x
+    global obstacles, score, game_over
+    global spawn_timer, spawn_time, obstacle_speed
+    global button_down, last_button_down
 
-    player_lane = 1
-    blocks = []
+    player_lane = 0
+    player_x = LANE_LEFT_X
+
+    obstacles = []
     score = 0
     game_over = False
+
     spawn_timer = 0
-    fall_speed = 180
+    spawn_time = SPAWN_TIME_START
+    obstacle_speed = OBSTACLE_SPEED_START
+
+    button_down = False
+    last_button_down = False
 
 
-def move_player():
-    global player_lane
+def switch_lane():
+    global player_lane, player_x
 
-    player_lane += 1
-
-    if player_lane >= len(LANES):
+    if player_lane == 0:
+        player_lane = 1
+        player_x = LANE_RIGHT_X
+    else:
         player_lane = 0
+        player_x = LANE_LEFT_X
 
 
-def spawn_block():
-    lane = random.randint(0, len(LANES) - 1)
+def read_pico_button():
+    """
+    Reads serial messages from the Pico.
 
-    block = {
-        "lane": lane,
-        "x": LANES[lane],
-        "y": -30,
-        "size": 45
-    }
+    Expected Pico messages:
+        B,0
+        B,1
+    """
 
-    blocks.append(block)
+    if ser is None:
+        return None
+
+    latest_value = None
+
+    try:
+        while True:
+            line = ser.readline().decode(errors="ignore").strip()
+            print(line)
+
+            if line == "":
+                break
+
+            print(line)  # debug line; remove later if you want
+
+            parts = line.split(",")
+
+            if len(parts) == 2 and parts[0] == "B":
+                if parts[1] == "1":
+                    latest_value = True
+                elif parts[1] == "0":
+                    latest_value = False
+
+    except Exception as e:
+        print("Serial read error:", e)
+        return None
+
+    return latest_value
 
 
-def rectangles_overlap(ax, ay, aw, ah, bx, by, bw, bh):
-    return (
-        ax < bx + bw and
-        ax + aw > bx and
-        ay < by + bh and
-        ay + ah > by
-    )
+def update():
+    global button_down, last_button_down
+    global spawn_timer, score, game_over
+    global spawn_time, obstacle_speed
 
+    # -----------------------------
+    # Read physical Pico button
+    # -----------------------------
+    pico_value = read_pico_button()
 
-def update(dt):
-    global spawn_timer, score, game_over, fall_speed, last_move_time
+    if pico_value is not None:
+        button_down = pico_value
+    else:
+        # Keyboard fallback for testing without Pico
+        button_down = keyboard.space
 
-    read_pico_serial()
+    # Detect only the instant the button becomes pressed.
+    # This prevents one long press from switching lanes repeatedly.
+    button_pressed_event = button_down and not last_button_down
+    last_button_down = button_down
 
-    now = time.time()
-
-    # Physical Pico button OR backup keyboard spacebar
-    control_pressed = button_state == 1 or keyboard.space
-
-    # Debounced action:
-    # Allows one movement/restart every MOVE_DELAY seconds while button is held
-    if control_pressed and now - last_move_time > MOVE_DELAY:
-        last_move_time = now
-
+    if button_pressed_event:
         if game_over:
             reset_game()
+            return
         else:
-            move_player()
+            switch_lane()
 
     if game_over:
         return
 
-    spawn_timer += dt
+    # -----------------------------
+    # Spawn obstacles
+    # -----------------------------
+    spawn_timer += 1
 
-    if spawn_timer > 0.9:
-        spawn_block()
+    if spawn_timer >= spawn_time:
         spawn_timer = 0
 
-    # Slowly make the game harder
-    fall_speed = 180 + score * 3
+        lane = random.choice([0, 1])
 
-    for block in blocks:
-        block["y"] += fall_speed * dt
-
-    # Remove blocks that passed the bottom
-    remaining_blocks = []
-
-    for block in blocks:
-        if block["y"] > HEIGHT + 50:
-            score += 1
+        if lane == 0:
+            x = LANE_LEFT_X
         else:
-            remaining_blocks.append(block)
+            x = LANE_RIGHT_X
 
-    blocks[:] = remaining_blocks
+        obstacle = {
+            "x": x,
+            "y": -OBSTACLE_SIZE,
+            "lane": lane
+        }
 
-    # Collision check
-    player_x = LANES[player_lane] - PLAYER_SIZE / 2
-    player_y = PLAYER_Y - PLAYER_SIZE / 2
+        obstacles.append(obstacle)
 
-    for block in blocks:
-        block_x = block["x"] - block["size"] / 2
-        block_y = block["y"] - block["size"] / 2
+    # -----------------------------
+    # Move obstacles
+    # -----------------------------
+    for obstacle in obstacles:
+        obstacle["y"] += obstacle_speed
 
-        if rectangles_overlap(
-            player_x,
-            player_y,
-            PLAYER_SIZE,
-            PLAYER_SIZE,
-            block_x,
-            block_y,
-            block["size"],
-            block["size"]
-        ):
+    # Remove obstacles that left the screen
+    obstacles[:] = [o for o in obstacles if o["y"] < HEIGHT + OBSTACLE_SIZE]
+
+    # -----------------------------
+    # Score and difficulty
+    # -----------------------------
+    score += 1
+
+    if score % 400 == 0:
+        obstacle_speed += 0.5
+
+        if spawn_time > 35:
+            spawn_time -= 5
+
+    # -----------------------------
+    # Collision detection
+    # -----------------------------
+    player_rect = Rect(
+        (player_x - PLAYER_SIZE // 2, PLAYER_Y - PLAYER_SIZE // 2),
+        (PLAYER_SIZE, PLAYER_SIZE)
+    )
+
+    for obstacle in obstacles:
+        obstacle_rect = Rect(
+            (obstacle["x"] - OBSTACLE_SIZE // 2, obstacle["y"] - OBSTACLE_SIZE // 2),
+            (OBSTACLE_SIZE, OBSTACLE_SIZE)
+        )
+
+        if player_rect.colliderect(obstacle_rect):
             game_over = True
 
 
@@ -190,77 +237,92 @@ def draw():
     # Background
     screen.fill((20, 20, 30))
 
-    # Lane lines
-    for x in LANES:
-        screen.draw.line((x, 0), (x, HEIGHT), (70, 70, 80))
-
-    # Score
+    # Title
     screen.draw.text(
-        f"Score: {score}",
-        (20, 20),
+        "Pico Lane Dodger",
+        center=(WIDTH // 2, 25),
         fontsize=36,
         color="white"
     )
 
     # Serial status
-    if ser is None:
-        status = "Pico: not connected | SPACE backup enabled"
-        status_color = "orange"
-    else:
-        status = f"Pico: connected on {PORT} | BTN={button_state}"
-        status_color = "lightgreen"
-
     screen.draw.text(
-        status,
-        (20, 60),
-        fontsize=24,
-        color=status_color
+        serial_message,
+        topleft=(10, 55),
+        fontsize=22,
+        color="gray"
     )
-
-    # Draw player
-    player_x = LANES[player_lane]
-
-    screen.draw.filled_rect(
-        Rect(
-            (player_x - PLAYER_SIZE / 2, PLAYER_Y - PLAYER_SIZE / 2),
-            (PLAYER_SIZE, PLAYER_SIZE)
-        ),
-        "cyan"
-    )
-
-    # Draw falling blocks
-    for block in blocks:
-        screen.draw.filled_rect(
-            Rect(
-                (block["x"] - block["size"] / 2, block["y"] - block["size"] / 2),
-                (block["size"], block["size"])
-            ),
-            "red"
-        )
 
     # Instructions
     screen.draw.text(
-        "Press the physical Pico button to switch lanes.",
-        (20, HEIGHT - 40),
+        "Press Pico button or SPACE to switch lanes",
+        center=(WIDTH // 2, 85),
         fontsize=24,
         color="white"
     )
 
+    # Draw lane divider
+    screen.draw.line(
+        (WIDTH // 2, 110),
+        (WIDTH // 2, HEIGHT),
+        "gray"
+    )
+
+    # Draw lane labels
+    screen.draw.text(
+        "LEFT",
+        center=(LANE_LEFT_X, 120),
+        fontsize=24,
+        color="gray"
+    )
+
+    screen.draw.text(
+        "RIGHT",
+        center=(LANE_RIGHT_X, 120),
+        fontsize=24,
+        color="gray"
+    )
+
+    # Draw player
+    player_rect = Rect(
+        (player_x - PLAYER_SIZE // 2, PLAYER_Y - PLAYER_SIZE // 2),
+        (PLAYER_SIZE, PLAYER_SIZE)
+    )
+
+    screen.draw.filled_rect(player_rect, "cyan")
+
+    # Draw obstacles
+    for obstacle in obstacles:
+        obstacle_rect = Rect(
+            (obstacle["x"] - OBSTACLE_SIZE // 2, obstacle["y"] - OBSTACLE_SIZE // 2),
+            (OBSTACLE_SIZE, OBSTACLE_SIZE)
+        )
+
+        screen.draw.filled_rect(obstacle_rect, "red")
+
+    # Draw score
+    screen.draw.text(
+        f"Score: {score}",
+        topleft=(10, 10),
+        fontsize=30,
+        color="white"
+    )
+
+    # Game over message
     if game_over:
         screen.draw.text(
             "GAME OVER",
-            center=(WIDTH / 2, HEIGHT / 2 - 40),
-            fontsize=64,
+            center=(WIDTH // 2, HEIGHT // 2 - 30),
+            fontsize=60,
             color="yellow"
         )
 
         screen.draw.text(
-            "Press the Pico button to restart.",
-            center=(WIDTH / 2, HEIGHT / 2 + 20),
-            fontsize=32,
+            "Press Pico button or SPACE to restart",
+            center=(WIDTH // 2, HEIGHT // 2 + 30),
+            fontsize=30,
             color="white"
         )
 
 
-connect_serial()
 pgzrun.go()

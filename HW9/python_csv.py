@@ -21,7 +21,38 @@ def calculate_sample_rate(t):
     fs = 1.0 / dt # sample rate in Hz
     return fs
 
-def iir_filter(signal, A, B):
+def make_lowpass_fir(fs, cutoff_hz, num_weights, window_type):
+    fc = cutoff_hz / fs
+
+    n = np.arange(num_weights)
+    center = (num_weights - 1) / 2
+
+    weights = 2 * fc * np.sinc(2 * fc * (n - center))
+
+    if window_type.lower() == "hamming":
+        window = np.hamming(num_weights)
+    elif window_type.lower() == "hann":
+        window = np.hanning(num_weights)
+    elif window_type.lower() == "blackman":
+        window = np.blackman(num_weights)
+    else:
+        window = np.ones(num_weights)
+
+    weights = weights * window
+    weights = weights / np.sum(weights)
+    return weights
+
+def fir_filter(signal, weights):
+    filtered = np.zeros(len(data1))
+
+    for i in range(len(data1)):
+        for j in range(len(weights)):
+            if i - j >= 0:
+                filtered[i] += weights[j] * data1[i-j]
+
+    return filtered
+
+#def iir_filter(signal, A, B):
     filtered = np.zeros(len(signal))
     filtered[0] = signal[0]
 
@@ -44,7 +75,7 @@ def get_fft(t, data1):
     n = len(data1) # number of samples
     signal_no_dc = data1 - np.mean(data1) # remove DC component
     fft_values = np.fft.fft(signal_no_dc) / n # compute FFT
-    freqs = np.fft.rfftfreq(n, d=1.0/fs) #
+    freqs = np.fft.fftfreq(n, d=1.0/fs) #
 
     freqs = freqs[:n//2]
     magnitude = np.abs(fft_values[:n//2])
@@ -77,15 +108,63 @@ def plot_fft_comparision(t, raw, filtered, title):
 
 files = ["sigA.csv", "sigB.csv", "sigC.csv", "sigD.csv"]
 
-iir_settings = {"sigA.csv": (0.98, 0.02), "sigB.csv": (0.95, 0.05), "sigC.csv": (0.90, 0.10), "sigD.csv": (0.90, 0.10)}
+fir_settings = {
+    "sigA.csv": {
+        "cutoff_hz": 40,
+        "num_weights": 101,
+        "window_type": "hamming",
+        "bandwidth_note": "transition estimated by 101 weights"
+    },
+    "sigB.csv": {
+        "cutoff_hz": 20,
+        "num_weights": 101,
+        "window_type": "hamming",
+        "bandwidth_note": "transition estimated by 101 weights"
+    },
+    "sigC.csv": {
+        "cutoff_hz": 20,
+        "num_weights": 101,
+        "window_type": "hamming",
+        "bandwidth_note": "transition estimated by 101 weights"
+    },
+    "sigD.csv": {
+        "cutoff_hz": 10,
+        "num_weights": 51,
+        "window_type": "hamming",
+        "bandwidth_note": "transition estimated by 51 weights"
+    },
+}
+
+#iir_settings = {"sigA.csv": (0.98, 0.02), "sigB.csv": (0.95, 0.05), "sigC.csv": (0.90, 0.10), "sigD.csv": (0.90, 0.10)}
+#maf_settings = {"sigA.csv": 200, "sigB.csv": 50, "sigC.csv": 10, "sigD.csv": 8}
 
 for filename in files:
     t, data1 = read_csv_file(filename)
-    A, B = iir_settings[filename]
-    filtered = iir_filter(data1, A, B)
+    fs = calculate_sample_rate(t)
 
-    plot_time_comparision(t, data1, filtered, filename + " IIR Filter, A = " + str(A) + ", B = " + str(B))
-    plot_fft_comparision(t, data1, filtered, filename + " IIR FFT Comparision, A = " + str(A) + ", B = " + str(B))
+    print(" Number of samples:", len(data1))
+    print(" Sample rate:", fs, "Hz")
+
+    settings = fir_settings[filename]
+    cutoff_hz = settings["cutoff_hz"]
+    num_weights = settings["num_weights"]
+    window_type = settings["window_type"]
+    bandwidth_note = settings["bandwidth_note"]
+
+    weights = make_lowpass_fir(fs, cutoff_hz, num_weights, window_type)
+    filtered = fir_filter(data1, weights)
+    #A, B = iir_settings[filename]
+    #filtered = iir_filter(data1, A, B)
+    #X = maf_settings[filename]
+    #filtered = moving_average_filter(data1, X)
+
+    title = (filename + " FIR: " + str(num_weights) + " weights, low-pass sinc, cutoff = " + str(cutoff_hz) + " Hz, " + window_type + ", " + bandwidth_note)
+
+    plot_time_comparision(t, data1, filtered, title)
+    plot_fft_comparision(t, data1, filtered, filename + " FIR FFT Comparision")
+    
+    #plot_time_comparision(t, data1, filtered, filename + " IIR Filter, A = " + str(A) + ", B = " + str(B))
+    #plot_fft_comparision(t, data1, filtered, filename + " IIR FFT Comparision, A = " + str(A) + ", B = " + str(B))
     #freqs, magnitude = get_fft(t, data1)
     #fs = calculate_sample_rate(t)
     #print("File:", filename)
